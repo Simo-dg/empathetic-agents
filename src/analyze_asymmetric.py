@@ -145,35 +145,54 @@ def plot_cooperation_over_time(log_dir: str = "logs"):
         alpha1 = float(parts[0])
         alpha2 = float(parts[1])
         
+        # Skip (0.5, 0.5) pair
+        if alpha1 == 0.5 and alpha2 == 0.5:
+            continue
+        
         # Load episode data
         filepath = os.path.join(log_dir, file)
         df = pd.read_csv(filepath)
         
         # Compute moving average cooperation (window=100)
+        # Use min_periods=window to avoid spike at start (needs full window for first value)
         window = 100
-        coop_ma = df['coop_flag'].rolling(window=window, min_periods=1).mean() * 100
+        coop_ma = df['coop_flag'].rolling(window=window, min_periods=window).mean() * 100
         
         # Determine line style and color
         if alpha1 == alpha2:
-            # Symmetric pairs - solid lines
+            # Symmetric pairs - solid lines with distinct colors
             linestyle = '-'
             if alpha1 == 1.0:
-                color = 'red'
+                color = '#e74c3c'  # Bright red
                 label = f'Both Selfish (1.0, 1.0)'
-            elif alpha1 <= 0.5:
-                color = 'green'
-                label = f'Both Empathic ({alpha1:.1f}, {alpha2:.1f})'
+            elif alpha1 == 0.2:
+                color = '#27ae60'  # Bright green
+                label = f'Both Empathic (0.2, 0.2)'
+            elif alpha1 == 0.8:
+                color = '#3498db'  # Bright blue
+                label = f'Both Medium (0.8, 0.8)'
             else:
-                color = 'blue'
+                color = '#95a5a6'  # Gray for any other
                 label = f'Symmetric ({alpha1:.1f}, {alpha2:.1f})'
         else:
-            # Asymmetric pairs - dashed lines
+            # Asymmetric pairs - dashed lines with distinct colors per pair
             linestyle = '--'
-            color = 'orange'
-            label = f'Asymmetric ({alpha1:.1f}, {alpha2:.1f})'
+            # Use different colors for each asymmetric combination
+            if (alpha1, alpha2) == (0.2, 0.8) or (alpha1, alpha2) == (0.8, 0.2):
+                color = '#f39c12'  # Orange
+                label = f'Asymmetric ({alpha1:.1f}, {alpha2:.1f})'
+            elif (alpha1, alpha2) == (0.2, 1.0) or (alpha1, alpha2) == (1.0, 0.2):
+                color = '#9b59b6'  # Purple
+                label = f'Asymmetric ({alpha1:.1f}, {alpha2:.1f})'
+            elif (alpha1, alpha2) == (0.8, 1.0) or (alpha1, alpha2) == (1.0, 0.8):
+                color = '#e67e22'  # Dark orange
+                label = f'Asymmetric ({alpha1:.1f}, {alpha2:.1f})'
+            else:
+                color = '#34495e'  # Dark gray for any other
+                label = f'Asymmetric ({alpha1:.1f}, {alpha2:.1f})'
         
         ax.plot(df['episode'], coop_ma, label=label, linestyle=linestyle, 
-                color=color, alpha=0.8, linewidth=1.5)
+                color=color, alpha=0.9, linewidth=2.0)
     
     ax.set_xlabel('Episode', fontsize=12)
     ax.set_ylabel('Cooperation Rate (%)', fontsize=12)
