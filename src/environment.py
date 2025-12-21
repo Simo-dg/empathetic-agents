@@ -1,0 +1,117 @@
+import random
+from typing import Any, Dict, Optional, Sequence, Tuple
+
+
+class MultiAgentMatrixGameEnv:
+    """
+    Stateless N-agent matrix game built from pairwise interactions.
+    payoff[(a_i, a_j)] -> (r_i, r_j)
+
+    State/obs = previous joint action tuple (or None at reset).
+    Returns (rewards, next_state, extra_dict).
+    """
+
+    def __init__(
+        self,
+        payoff_table: Dict[Tuple[Any, Any], Tuple[float, float]],
+        actions: Sequence[Any],
+        num_agents: int,
+        seed: Optional[int] = None,
+    ):
+        if num_agents < 2:
+            raise ValueError("num_agents must be >= 2")
+        self.payoff = payoff_table
+        self.actions = list(actions)
+        self.num_agents = int(num_agents)
+        self.rng = random.Random(seed)
+        self.prev_joint_action: Optional[Tuple[Any, ...]] = None
+
+    def reset(self):
+        self.prev_joint_action = None
+        return self.prev_joint_action
+
+    def step(self, actions: Sequence[Any]) -> Tuple[Tuple[float, ...], Any, Dict[str, Any]]:
+        if len(actions) != self.num_agents:
+            raise ValueError(f"Expected {self.num_agents} actions, got {len(actions)}")
+        for a in actions:
+            if a not in self.actions:
+                raise ValueError(f"Invalid action: {a}")
+
+        rewards = [0.0 for _ in range(self.num_agents)]
+
+        for i in range(self.num_agents):
+            for j in range(i + 1, self.num_agents):
+                r_i, r_j = self.payoff[(actions[i], actions[j])]
+                rewards[i] += float(r_i)
+                rewards[j] += float(r_j)
+
+        # normalize by (N-1) so scale comparable across N
+        scale = float(self.num_agents - 1)
+        rewards = [r / scale for r in rewards]
+
+        self.prev_joint_action = tuple(actions)
+        next_state = self.prev_joint_action
+        extra = {}
+        return tuple(rewards), next_state, extra
+
+
+class ResourceSharingEnv:
+    """
+    N-agent resource sharing with a common renewable stock.
+
+    actions in {0,1,2} (extraction).
+    If total extraction <= stock: reward_i = extraction_i
+    else: reward_i = penalty for everyone.
+
+    State returned = discretized stock (rounded int).
+    Returns (rewards, next_state, extra_dict).
+    """
+
+    def __init__(
+        self,
+        num_agents: int,
+        max_stock: int,
+        regen: float,
+        penalty: float,
+        seed: Optional[int] = None,
+    ):
+        if num_agents < 2:
+            raise ValueError("num_agents must be >= 2")
+        self.num_agents = int(num_agents)
+        self.max_stock = float(max_stock)
+        self.regen = float(regen)
+        self.penalty = float(penalty)
+
+        self.rng = random.Random(seed)
+        self.stock: float = self.max_stock
+
+    def _get_state(self) -> int:
+        return int(round(self.stock))
+
+    def reset(self) -> int:
+        self.stock = self.max_stock
+        return self._get_state()
+
+    def step(self, actions: Sequence[int]) -> Tuple[Tuple[float, ...], int, Dict[str, Any]]:
+        if len(actions) != self.num_agents:
+            raise ValueError(f"Expected {self.num_agents} actions, got {len(actions)}")
+        for a in actions:
+            if a not in (0, 1, 2):
+                raise ValueError(f"Invalid action {a}. Must be 0,1,2.")
+
+        total_extraction = int(sum(actions))
+
+        if total_extraction <= self.stock:
+            rewards = [float(a) for a in actions]
+        else:
+            rewards = [self.penalty for _ in range(self.num_agents)]
+
+        self.stock = self.stock - total_extraction + self.regen
+        if self.stock < 0.0:
+            self.stock = 0.0
+        if self.stock > self.max_stock:
+            self.stock = self.max_stock
+
+        next_state = self._get_state()
+        extra = {"total_extraction": total_extraction, "stock_level": next_state}
+        return tuple(rewards), next_state, extra
