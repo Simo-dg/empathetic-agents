@@ -5,6 +5,8 @@ import math
 import random
 from collections import deque, defaultdict
 from typing import Dict, Any, List, Tuple, Optional
+import pandas as pd
+import numpy as np
 
 import matplotlib.pyplot as plt
 
@@ -123,31 +125,271 @@ def aggregate_series(paths: List[str], field: str) -> Tuple[List[int], List[floa
     return common_steps, means, ci95
 
 
+import seaborn as sns
+
+def setup_plot_style(style: str = "whitegrid", context: str = "paper", font_scale: float = 1.1):
+    """Configure matplotlib and seaborn for publication-grade plots."""
+    sns.set_theme(style=style, context=context, font_scale=font_scale)
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.serif": ["Times New Roman"],
+        "axes.labelweight": "bold",
+        "axes.linewidth": 1.2,
+        "xtick.major.width": 1.2,
+        "ytick.major.width": 1.2,
+        "xtick.minor.width": 0.8,
+        "ytick.minor.width": 0.8,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "figure.dpi": 300,
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "savefig.facecolor": "white",
+        "legend.frameon": True,
+        "legend.framealpha": 0.95,
+        "legend.edgecolor": "black",
+        "legend.borderpad": 0.8,
+        "lines.linewidth": 2.5,
+        "lines.markersize": 8,
+    })
+
+
 def plot_metric_with_ci(
-    cond_to_paths: Dict[str, List[str]],
+    cond_paths: Dict[str, List[str]],
     out_dir: str,
     title: str,
     field: str,
     ylabel: str,
     out_name: str,
-) -> None:
-    plt.figure()
-    for label, paths in cond_to_paths.items():
-        xs, mean, ci = aggregate_series(paths, field)
-        if not xs:
+    xlabel: str = "Training Steps",
+    figsize: Tuple[float, float] = (10, 6),
+    show_markers: bool = False,
+    marker_every: int = 10,
+    log_scale: bool = False,
+    ylim: Optional[Tuple[float, float]] = None,
+):
+    """
+    Create publication-grade plot with confidence intervals.
+    
+    Args:
+        cond_paths: Dict mapping condition names to lists of CSV file paths
+        out_dir: Output directory for saving figure
+        title: Plot title
+        field: Column name to plot
+        ylabel: Y-axis label
+        out_name: Output filename
+        xlabel: X-axis label (default: "Training Steps")
+        figsize: Figure size as (width, height)
+        show_markers: Whether to show markers on lines
+        marker_every: Show markers every N steps (if show_markers=True)
+        log_scale: Use log scale for y-axis
+        ylim: Y-axis limits as (min, max)
+    """
+    setup_plot_style()
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    palette = sns.color_palette("husl", n_colors=len(cond_paths))
+    
+    for i, (cond_name, paths) in enumerate(cond_paths.items()):
+        all_series = []
+        for p in paths:
+            if os.path.exists(p):
+                try:
+                    df = pd.read_csv(p)
+                    if field in df.columns:
+                        all_series.append(df[field].values)
+                except Exception as e:
+                    print(f"Warning: Could not read {p}: {e}")
+        
+        if not all_series:
+            print(f"Warning: No valid data found for condition '{cond_name}'")
             continue
-        (line,) = plt.plot(xs, mean, label=label)
-        c = line.get_color()
-        low = [m - e for m, e in zip(mean, ci)]
-        high = [m + e for m, e in zip(mean, ci)]
-        plt.fill_between(xs, low, high, alpha=0.2, color=c)
+        
+        # Align all series to minimum length
+        min_len = min(len(s) for s in all_series)
+        data = np.array([s[:min_len] for s in all_series])
+        steps = np.arange(min_len)
+        
+        # Compute statistics
+        mean = np.mean(data, axis=0)
+        std = np.std(data, axis=0)
+        ci = 1.96 * std / np.sqrt(len(all_series))  # 95% CI
+        
+        # Plot line
+        line_kwargs = {"label": cond_name, "color": palette[i], "linewidth": 2.5}
+        if show_markers:
+            line_kwargs.update({"marker": "o", "markevery": marker_every, "markersize": 6})
+        
+        ax.plot(steps, mean, **line_kwargs)
+        
+        # Plot confidence interval as shaded region
+        ax.fill_between(steps, mean - ci, mean + ci, color=palette[i], alpha=0.15)
+    
+    # Formatting
+    ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
+    ax.set_xlabel(xlabel, fontsize=12, fontweight="bold")
+    ax.set_ylabel(ylabel, fontsize=12, fontweight="bold")
+    
+    if log_scale:
+        ax.set_yscale("log")
+    
+    if ylim:
+        ax.set_ylim(ylim)
+    
+    # Legend
+    ax.legend(
+        bbox_to_anchor=(1.05, 1),
+        loc="upper left",
+        frameon=True,
+        fontsize=10,
+        framealpha=0.95,
+        edgecolor="black"
+    )
+    
+    # Spine styling
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(True, alpha=0.3, linestyle="--", linewidth=0.8)
+    
+    plt.tight_layout()
+    
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, out_name), bbox_inches="tight", facecolor="white")
+    plt.close()
 
-    plt.xlabel("Step")
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(out_dir, out_name), dpi=300)
+
+def plot_multiple_metrics_grid(
+    cond_paths: Dict[str, List[str]],
+    out_dir: str,
+    metrics: List[Tuple[str, str, str]],  # (field, ylabel, display_name)
+    main_title: str,
+    out_name: str,
+    ncols: int = 2,
+    figsize: Optional[Tuple[float, float]] = None,
+):
+    """
+    Create a grid of plots for multiple metrics.
+    
+    Args:
+        cond_paths: Dict mapping condition names to lists of CSV file paths
+        out_dir: Output directory
+        metrics: List of (field, ylabel, display_name) tuples
+        main_title: Overall title for the figure
+        out_name: Output filename
+        ncols: Number of columns in grid
+        figsize: Figure size (auto-calculated if None)
+    """
+    setup_plot_style()
+    
+    nrows = (len(metrics) + ncols - 1) // ncols
+    if figsize is None:
+        figsize = (6 * ncols, 4.5 * nrows)
+    
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
+    if nrows == 1:
+        axes = axes.reshape(1, -1) if ncols > 1 else np.array([[axes]])
+    elif ncols == 1:
+        axes = axes.reshape(-1, 1)
+    
+    palette = sns.color_palette("husl", n_colors=len(cond_paths))
+    
+    for idx, (field, ylabel, display_name) in enumerate(metrics):
+        ax = axes[idx // ncols, idx % ncols]
+        
+        for i, (cond_name, paths) in enumerate(cond_paths.items()):
+            all_series = []
+            for p in paths:
+                if os.path.exists(p):
+                    try:
+                        df = pd.read_csv(p)
+                        if field in df.columns:
+                            all_series.append(df[field].values)
+                    except Exception as e:
+                        print(f"Warning: Could not read {p}: {e}")
+            
+            if not all_series:
+                continue
+            
+            min_len = min(len(s) for s in all_series)
+            data = np.array([s[:min_len] for s in all_series])
+            steps = np.arange(min_len)
+            
+            mean = np.mean(data, axis=0)
+            std = np.std(data, axis=0)
+            ci = 1.96 * std / np.sqrt(len(all_series))
+            
+            ax.plot(steps, mean, label=cond_name, color=palette[i], linewidth=2.5)
+            ax.fill_between(steps, mean - ci, mean + ci, color=palette[i], alpha=0.15)
+        
+        ax.set_title(display_name, fontsize=11, fontweight="bold")
+        ax.set_xlabel("Steps", fontsize=10)
+        ax.set_ylabel(ylabel, fontsize=10, fontweight="bold")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(True, alpha=0.3, linestyle="--", linewidth=0.8)
+    
+    # Hide empty subplots
+    for idx in range(len(metrics), nrows * ncols):
+        axes[idx // ncols, idx % ncols].set_visible(False)
+    
+    fig.suptitle(main_title, fontsize=16, fontweight="bold", y=0.995)
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, -0.02),
+               ncol=len(cond_paths), frameon=True, fontsize=10, framealpha=0.95)
+    
+    plt.tight_layout()
+    
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, out_name), bbox_inches="tight", facecolor="white")
+    plt.close()
+
+
+def plot_metric_comparison_bars(
+    data: Dict[str, List[float]],
+    out_dir: str,
+    title: str,
+    ylabel: str,
+    out_name: str,
+    xlabel: str = "Condition",
+    figsize: Tuple[float, float] = (10, 6),
+):
+    """
+    Create a bar plot with error bars for comparing conditions.
+    
+    Args:
+        data: Dict mapping condition names to lists of values
+        out_dir: Output directory
+        title: Plot title
+        ylabel: Y-axis label
+        out_name: Output filename
+        xlabel: X-axis label
+        figsize: Figure size
+    """
+    setup_plot_style()
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    palette = sns.color_palette("husl", n_colors=len(data))
+    
+    conditions = list(data.keys())
+    means = [np.mean(v) for v in data.values()]
+    stds = [np.std(v) for v in data.values()]
+    
+    bars = ax.bar(conditions, means, yerr=stds, capsize=10, alpha=0.8, color=palette,
+                   edgecolor="black", linewidth=1.5, error_kw={"linewidth": 2})
+    
+    ax.set_title(title, fontsize=14, fontweight="bold", pad=15)
+    ax.set_xlabel(xlabel, fontsize=12, fontweight="bold")
+    ax.set_ylabel(ylabel, fontsize=12, fontweight="bold")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(True, alpha=0.3, axis="y", linestyle="--", linewidth=0.8)
+    
+    plt.tight_layout()
+    
+    os.makedirs(out_dir, exist_ok=True)
+    plt.savefig(os.path.join(out_dir, out_name), bbox_inches="tight", facecolor="white")
     plt.close()
 
 
@@ -330,7 +572,8 @@ def run_one_experiment(
 
     state = env.reset()
     time_to_threshold: Optional[int] = None
-
+    block_sig_sum = [0.0 for _ in range(N)]
+    block_sig_count = 0
     with open(csv_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
@@ -358,8 +601,6 @@ def run_one_experiment(
             rewards, next_state, extra = env.step(joint_actions)
             total_reward = float(sum(rewards))
             
-            block_sig_sum = [0.0 for _ in range(N)]
-            block_sig_count = 0
             # 3) (learn_alpha) accumulate bandit signal over this block
             if baseline == "learn_alpha":
                 block_sig_count += 1
@@ -440,7 +681,7 @@ def run_one_experiment(
                     ma_collapse = ""
                 else:
                     ma_coop_fraction = ""
-                    ma_alpha_mean = ""
+                    ma_alpha_mean = moving_average(alpha_mean_window) if baseline != "random" else ""
                     ma_stock_level = moving_average(stock_window)
                     ma_collapse = moving_average(collapse_window)
 
