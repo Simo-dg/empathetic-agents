@@ -11,9 +11,27 @@ EPS_DECAY = 0.995
 STEPS = 5000          # "episodes" = steps (these envs are continuing)
 EVAL_WINDOW = 100
 SEED = 42
+# multi-seed evaluation (robustness)
+SEEDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+# --- New baselines ---
+BASELINES = ["empathy", "team", "random", "hetero_fixed", "learn_alpha"]
+
+# --- Heterogeneous empathy profiles (examples) ---
+# If N is 4, you can use one of these vectors.
+HETERO_PROFILES = [
+    [1.0, 1.0, 1.0, 1.0],      # all selfish (same as empathy α=1)
+    [0.8, 0.8, 0.2, 0.2],      # two more selfish, two more prosocial
+    [1.0, 0.5, 0.5, 0.0],      # diverse mix
+]
+
+# --- Learning empathy (bandit over alpha) ---
+ALPHA_CANDIDATES = [0.0, 0.2, 0.5, 0.8, 1.0]
+ALPHA_BANDIT_EPS = 0.1          # exploration for choosing alpha
+LEARN_ALPHA_SIGNAL = "team"     # "self" | "team" | "shaped"
 
 # empathy sweep
-EMPATHY_ALPHAS = [1.0, 0.8, 0.5, 0.2]
+EMPATHY_ALPHAS = [1.0, 0.8, 0.5, 0.2, 0.0]
 
 # "time to cooperation" threshold on moving average
 COOP_THRESHOLD = 0.8
