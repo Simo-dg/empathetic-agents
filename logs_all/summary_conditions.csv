@@ -7,7 +7,7 @@ pd_N2,matrix,2,empathy α=0.00,10,338.3,38.546
 pd_N2,matrix,2,team,10,669.4,854.403
 pd_N2,matrix,2,random,10,,
 pd_N2,matrix,2,hetero_fixed,10,336.0,22.701
-pd_N2,matrix,2,learn_alpha (team),10,881.0,976.145
+pd_N2,matrix,2,learn_alpha (team),10,1038.222,1134.399
 pd_N4,matrix,4,empathy α=1.00,10,,
 pd_N4,matrix,4,empathy α=0.80,10,,
 pd_N4,matrix,4,empathy α=0.50,10,,
@@ -16,7 +16,7 @@ pd_N4,matrix,4,empathy α=0.00,10,2274.889,1445.889
 pd_N4,matrix,4,team,10,1645.333,1218.571
 pd_N4,matrix,4,random,10,,
 pd_N4,matrix,4,hetero_fixed,10,,
-pd_N4,matrix,4,learn_alpha (team),10,552.0,0.0
+pd_N4,matrix,4,learn_alpha (team),10,3180.0,0.0
 sh_N4,matrix,4,empathy α=1.00,10,,
 sh_N4,matrix,4,empathy α=0.80,10,,
 sh_N4,matrix,4,empathy α=0.50,10,577.0,0.0
@@ -25,7 +25,7 @@ sh_N4,matrix,4,empathy α=0.00,10,2516.571,1534.254
 sh_N4,matrix,4,team,10,3327.0,625.383
 sh_N4,matrix,4,random,10,,
 sh_N4,matrix,4,hetero_fixed,10,,
-sh_N4,matrix,4,learn_alpha (team),10,1493.0,518.769
+sh_N4,matrix,4,learn_alpha (team),10,3495.333,519.381
 rs_N4,resource,4,empathy α=1.00,10,158.7,18.685
 rs_N4,resource,4,empathy α=0.80,10,164.7,39.956
 rs_N4,resource,4,empathy α=0.50,10,162.8,24.307
@@ -34,4 +34,4 @@ rs_N4,resource,4,empathy α=0.00,10,156.7,27.657
 rs_N4,resource,4,team,10,171.9,39.278
 rs_N4,resource,4,random,10,,
 rs_N4,resource,4,hetero_fixed,10,158.7,23.195
-rs_N4,resource,4,learn_alpha (team),10,152.6,29.064
+rs_N4,resource,4,learn_alpha (team),10,145.7,27.162

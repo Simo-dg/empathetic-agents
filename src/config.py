@@ -13,6 +13,7 @@ EVAL_WINDOW = 100
 SEED = 42
 # multi-seed evaluation (robustness)
 SEEDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+ALPHA_BLOCK = 50
 
 # --- New baselines ---
 BASELINES = ["empathy", "team", "random", "hetero_fixed", "learn_alpha"]

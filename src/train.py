@@ -15,7 +15,7 @@ from config import (
     STEPS, EVAL_WINDOW, SEED,
     EMPATHY_ALPHAS, COOP_THRESHOLD,
     LOG_ROOT, EXPERIMENTS,
-    SEEDS, BASELINES,
+    SEEDS, BASELINES,ALPHA_BLOCK,
 )
 
 # ---- Optional new config knobs (safe defaults if missing) ----
@@ -309,14 +309,16 @@ def run_one_experiment(
 
     # per-step fields (+ alpha per agent)
     fieldnames = (
-        ["step", "experiment", "type", "N", "baseline", "empathy_alpha", "hetero_tag", "learn_alpha_signal"]
-        + [f"alpha{i+1}" for i in range(N)]
-        + [f"a{i+1}" for i in range(N)]
-        + [f"r{i+1}" for i in range(N)]
-        + ["total_reward"]
-        + ["coop_strict", "coop_fraction", "ineq_var", "stock_level", "collapse"]
-        + ["ma_coop_strict", "ma_coop_fraction", "ma_total_reward", "ma_ineq_var", "ma_stock_level", "ma_collapse"]
-    )
+    ["step", "experiment", "type", "N", "baseline", "empathy_alpha", "hetero_tag", "learn_alpha_signal"]
+    + [f"alpha{i+1}" for i in range(N)]
+    + ["alpha_mean"]
+    + [f"a{i+1}" for i in range(N)]
+    + [f"r{i+1}" for i in range(N)]
+    + ["total_reward"]
+    + ["coop_strict", "coop_fraction", "ineq_var", "stock_level", "collapse"]
+    + ["ma_coop_strict", "ma_coop_fraction", "ma_total_reward", "ma_ineq_var", "ma_stock_level", "ma_collapse"]
+    + ["ma_alpha_mean"]
+)
 
     coop_window = deque(maxlen=EVAL_WINDOW)
     coopfrac_window = deque(maxlen=EVAL_WINDOW)
@@ -324,6 +326,7 @@ def run_one_experiment(
     ineq_window = deque(maxlen=EVAL_WINDOW)
     stock_window = deque(maxlen=EVAL_WINDOW)
     collapse_window = deque(maxlen=EVAL_WINDOW)
+    alpha_mean_window = deque(maxlen=EVAL_WINDOW)
 
     state = env.reset()
     time_to_threshold: Optional[int] = None
@@ -335,8 +338,16 @@ def run_one_experiment(
         for step in range(STEPS):
             # 1) choose empathy alpha for this step (fixed or bandit)
             if baseline != "random":
-                for ag in agents:
-                    ag.select_empathy_alpha()
+                if baseline == "learn_alpha":
+                    # pick new alpha only at block boundaries
+                    if step % ALPHA_BLOCK == 0:
+                        for ag in agents:
+                            ag.select_empathy_alpha()
+                    # else: keep ag.current_alpha as-is for this whole block
+                else:
+                    # fixed alpha baselines (calling each step is fine; it doesn't change)
+                    for ag in agents:
+                        ag.select_empathy_alpha()
 
             # 2) choose actions
             if baseline == "random":
@@ -346,9 +357,12 @@ def run_one_experiment(
 
             rewards, next_state, extra = env.step(joint_actions)
             total_reward = float(sum(rewards))
-
-            # 3) (learn_alpha) update bandit with chosen signal
+            
+            block_sig_sum = [0.0 for _ in range(N)]
+            block_sig_count = 0
+            # 3) (learn_alpha) accumulate bandit signal over this block
             if baseline == "learn_alpha":
+                block_sig_count += 1
                 for i, ag in enumerate(agents):
                     sig = learn_alpha_signal(
                         mode=LEARN_ALPHA_SIGNAL,
@@ -358,7 +372,16 @@ def run_one_experiment(
                         agent_alpha=ag.current_alpha,
                         i=i,
                     )
-                    ag.update_alpha_bandit(sig)
+                    block_sig_sum[i] += float(sig)
+
+                # update the bandit at the END of each block using block-average signal
+                if (step + 1) % ALPHA_BLOCK == 0:
+                    for i, ag in enumerate(agents):
+                        avg_sig = block_sig_sum[i] / float(block_sig_count)
+                        ag.update_alpha_bandit(avg_sig)
+                    # reset for next block
+                    block_sig_sum = [0.0 for _ in range(N)]
+                    block_sig_count = 0
 
             # 4) learning update
             if baseline != "random":
@@ -377,6 +400,9 @@ def run_one_experiment(
 
             # 5) metrics
             coop_strict = int(coop_fn(joint_actions, next_state, extra))
+            alpha_mean = float(sum(ag.current_alpha for ag in agents)) / float(N) if baseline != "random" else float("nan")
+            if baseline != "random":
+                alpha_mean_window.append(alpha_mean)
 
             if exp["type"] == "matrix":
                 coop_fraction = sum(1 for a in joint_actions if a == coop_action) / float(N)
@@ -406,6 +432,7 @@ def run_one_experiment(
                 ma_coop_strict = moving_average(coop_window)
                 ma_total_reward = moving_average(reward_window)
                 ma_ineq_var = moving_average(ineq_window)
+                ma_alpha_mean = moving_average(alpha_mean_window) if baseline != "random" else ""
 
                 if exp["type"] == "matrix":
                     ma_coop_fraction = moving_average(coopfrac_window)
@@ -413,6 +440,7 @@ def run_one_experiment(
                     ma_collapse = ""
                 else:
                     ma_coop_fraction = ""
+                    ma_alpha_mean = ""
                     ma_stock_level = moving_average(stock_window)
                     ma_collapse = moving_average(collapse_window)
 
@@ -425,6 +453,7 @@ def run_one_experiment(
                 ma_ineq_var = ""
                 ma_stock_level = ""
                 ma_collapse = ""
+                ma_alpha_mean = ""
 
             row = {
                 "step": step,
@@ -450,6 +479,8 @@ def run_one_experiment(
                 "ma_ineq_var": (round(float(ma_ineq_var), 6) if ma_ineq_var != "" else ""),
                 "ma_stock_level": (round(float(ma_stock_level), 4) if ma_stock_level != "" else ""),
                 "ma_collapse": (round(float(ma_collapse), 4) if ma_collapse != "" else ""),
+                "alpha_mean": (round(alpha_mean, 4) if baseline != "random" else ""),
+                "ma_alpha_mean": (round(float(ma_alpha_mean), 4) if ma_alpha_mean != "" else ""),
             }
             w.writerow(row)
 
@@ -533,6 +564,15 @@ def main() -> None:
             field="ma_ineq_var",
             ylabel=f"MA reward variance (window={EVAL_WINDOW})",
             out_name="ma_ineq_var_mean_ci.png",
+        )
+
+        plot_metric_with_ci(
+            cond_paths,
+            exp_out_dir,
+            title=f"{name}: Mean empathy alpha (moving avg)",
+            field="ma_alpha_mean",
+            ylabel=f"MA alpha_mean (window={EVAL_WINDOW})",
+            out_name="ma_alpha_mean_ci.png",
         )
 
         if exp["type"] == "matrix":
